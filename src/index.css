@@ -1,0 +1,118 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap');
+
+:root {
+  --brand-teal: #00968F;
+  --brand-yellow: #FFCD00;
+  --bg-deep: #064e4b; /* Dark teal for depth */
+  --bg-card: rgba(255, 255, 255, 0.1);
+  --primary: var(--brand-teal);
+  --primary-glow: rgba(0, 150, 143, 0.3);
+  --accent: var(--brand-yellow);
+  --text-main: #ffffff;
+  --text-muted: rgba(255, 255, 255, 0.7);
+  --border-glass: rgba(255, 255, 255, 0.2);
+  --fluid-padding: clamp(0.5rem, 2vw, 1.5rem);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: 'Outfit', sans-serif;
+  background: linear-gradient(135deg, var(--brand-teal) 0%, #042f2e 50%, var(--brand-yellow) 100%);
+  background-attachment: fixed;
+  color: var(--text-main);
+  height: 100dvh;
+  width: 100vw;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  position: fixed;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  max-width: 2560px; /* Cap for ultra-wide */
+  margin: 0 auto;
+  width: 100%;
+}
+
+.game-dashboard {
+  height: 100dvh;
+  max-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: var(--fluid-padding);
+  gap: var(--fluid-padding);
+  background: radial-gradient(circle at top left, rgba(0, 150, 143, 0.15), transparent),
+              radial-gradient(circle at bottom right, rgba(255, 205, 0, 0.1), transparent);
+  overflow: hidden;
+}
+
+.glass-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-glass);
+  border-radius: 1.5rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--brand-teal), #0d9488);
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.75rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 15px var(--primary-glow);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px var(--primary-glow);
+  filter: brightness(1.1);
+}
+
+.input-field {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-glass);
+  padding: 0.75rem 1rem;
+  border-radius: 0.75rem;
+  color: white;
+  outline: none;
+  transition: all 0.3s ease;
+}
+
+.input-field:focus {
+  border-color: var(--primary);
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 0 0 4px var(--primary-glow);
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border-radius: 4px;
+}
+
+/* Global Responsive Layout Fixes */
+@media (max-width: 768px) {
+  .game-dashboard {
+    padding: 0;
+  }
+}
