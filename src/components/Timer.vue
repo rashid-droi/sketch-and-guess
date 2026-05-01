@@ -117,4 +117,29 @@ const isCritical = computed(() => props.time <= 10);
   75% { transform: translateX(2px); }
   100% { transform: translateX(0); }
 }
+
+@media (max-width: 768px) {
+  .timer-container {
+    min-width: 0;
+    padding: 0.4rem 0.8rem;
+    gap: 0.6rem;
+    border-radius: 0.75rem;
+  }
+  
+  .timer-icon {
+    font-size: 1rem;
+  }
+  
+  .seconds {
+    font-size: 1.25rem;
+  }
+  
+  .progress-bar-bg {
+    height: 4px;
+  }
+  
+  .timer-content {
+    gap: 0.25rem;
+  }
+}
 </style>

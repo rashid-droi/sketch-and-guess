@@ -109,7 +109,7 @@ const handleAction = async (isJoin = false) => {
       </div>
 
       <footer class="footer">
-        Built with Vue 3 & FastAPI
+        SELECT
       </footer>
     </div>
   </div>

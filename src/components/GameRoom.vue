@@ -35,6 +35,19 @@ const triggerStart = () => {
   fetch(`http://localhost:8000/start-game/${props.gameState.roomId}`, { method: 'POST' });
 };
 
+const guessInput = ref(null);
+const guessInputMobile = ref(null);
+
+const focusInput = () => {
+  const input = window.innerWidth <= 1024 ? guessInputMobile.value : guessInput.value;
+  if (input && props.gameState.status === 'IN_PROGRESS' && !props.gameState.isDrawer) {
+    // 200ms delay ensures mobile keyboard triggers reliably
+    setTimeout(() => {
+      input?.focus();
+    }, 200);
+  }
+};
+
 // Auto-populate the first letter hint for guessers
 watch(() => props.gameState.maskedWord, (newMask) => {
   if (!props.gameState.isDrawer && newMask && newMask.length > 0) {
@@ -47,6 +60,16 @@ watch(() => props.gameState.maskedWord, (newMask) => {
     quickGuess.value = ''; // Clear if drawer
   }
 }, { immediate: true });
+
+// Auto-focus logic for guessers
+watch(
+  [() => props.gameState.status, () => props.gameState.isDrawer],
+  ([status, isDrawer]) => {
+    if (status === 'IN_PROGRESS' && !isDrawer) {
+      focusInput();
+    }
+  }
+);
 </script>
 
 <template>
@@ -64,16 +87,26 @@ watch(() => props.gameState.maskedWord, (newMask) => {
         <div v-if="gameState.status === 'IN_PROGRESS'" class="round-status">
           <div class="word-hint">
             <span v-if="gameState.isDrawer" class="full-word">{{ gameState.currentWord }}</span>
-            <input 
-              v-else 
-              v-model="quickGuess"
-              @keyup.enter="submitQuickGuess"
-              class="masked-word-input" 
-              type="text" 
-              :placeholder="gameState.maskedWord.split('').join(' ')" 
-              autocomplete="off"
-              title="Type your guess here!"
-            />
+            <div v-else class="guess-input-wrapper hide-mobile-tablet">
+              <input 
+                ref="guessInput"
+                v-model="quickGuess"
+                @keyup.enter="submitQuickGuess"
+                class="masked-word-input" 
+                type="text" 
+                :placeholder="gameState.maskedWord.split('').join(' ')" 
+                autocomplete="off"
+                title="Type your guess here!"
+              />
+              <button 
+                @click="submitQuickGuess"
+                :disabled="!quickGuess.trim()"
+                class="guess-send-btn"
+                aria-label="Submit guess"
+              >
+                <span class="send-icon">🚀</span>
+              </button>
+            </div>
             <div v-if="gameState.wordLength" class="word-length-indicator">
               {{ gameState.wordLength }} letters
             </div>
@@ -101,6 +134,28 @@ watch(() => props.gameState.maskedWord, (newMask) => {
           :isDrawer="gameState.isDrawer" 
           :onDraw="(data) => onSend('draw', data)" 
         />
+
+        <!-- Mobile-only guess input section -->
+        <div v-if="gameState.status === 'IN_PROGRESS' && !gameState.isDrawer" class="mobile-guess-chamber show-mobile-tablet">
+          <div class="guess-input-wrapper">
+            <input 
+              ref="guessInputMobile"
+              v-model="quickGuess"
+              @keyup.enter="submitQuickGuess"
+              class="masked-word-input" 
+              type="text" 
+              :placeholder="gameState.maskedWord.split('').join(' ')" 
+              autocomplete="off"
+            />
+            <button 
+              @click="submitQuickGuess" 
+              :disabled="!quickGuess.trim()" 
+              class="guess-send-btn"
+            >
+              <span class="send-icon">🚀</span>
+            </button>
+          </div>
+        </div>
       </main>
 
       <!-- Sidebars Row (Mobile Split) -->
@@ -229,6 +284,77 @@ watch(() => props.gameState.maskedWord, (newMask) => {
   border-bottom: 2px dashed var(--primary);
   background: rgba(255, 255, 255, 0.05);
   border-radius: 0.5rem 0.5rem 0 0;
+}
+
+@media (max-width: 768px) {
+  .masked-word-input {
+    max-width: 180px;
+  }
+}
+
+.guess-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  max-width: 350px;
+  position: relative;
+}
+
+.guess-send-btn {
+  background: linear-gradient(135deg, var(--brand-teal), #0d9488);
+  color: white;
+  border: none;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  box-shadow: 0 4px 15px rgba(0, 150, 143, 0.4);
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.guess-send-btn:hover:not(:disabled) {
+  transform: scale(1.1) rotate(-5deg);
+  filter: brightness(1.1);
+}
+
+.guess-send-btn:active:not(:disabled) {
+  transform: scale(0.9);
+}
+
+.guess-send-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  filter: grayscale(1);
+  box-shadow: none;
+}
+
+.send-icon {
+  font-size: 1.2rem;
+  margin-left: 2px;
+  margin-bottom: 2px;
+}
+
+@media (max-width: 1024px) {
+  .guess-input-wrapper {
+    max-width: 100%;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+  
+  .guess-send-btn {
+    width: 40px;
+    height: 40px;
+  }
+  
+  .send-icon {
+    font-size: 1rem;
+  }
 }
 
 .pulse-text {
@@ -378,9 +504,11 @@ watch(() => props.gameState.maskedWord, (newMask) => {
   }
 
   .game-header {
+    grid-template-columns: auto 1fr auto;
     border-radius: 1rem;
     margin-bottom: 0.25rem;
-    padding: 0.75rem;
+    padding: 0.5rem 0.75rem;
+    gap: 0.5rem;
   }
 
   .game-layout {
@@ -436,5 +564,43 @@ watch(() => props.gameState.maskedWord, (newMask) => {
     min-height: 250px;
     margin-bottom: 1rem;
   }
+}
+.show-mobile-tablet { display: none; }
+.hide-mobile-tablet { display: flex; }
+
+@media (max-width: 1024px) {
+  .show-mobile-tablet { display: flex; }
+  .hide-mobile-tablet { display: none !important; }
+}
+
+.mobile-guess-chamber {
+  width: 100%;
+  background: rgba(15, 23, 42, 0.4);
+  backdrop-filter: blur(12px);
+  padding: 1rem;
+  border-top: 1px solid var(--border-glass);
+  margin-top: auto;
+  justify-content: center;
+  align-items: center;
+  z-index: 50;
+}
+
+.mobile-guess-chamber .guess-input-wrapper {
+  max-width: 100%;
+  gap: 1rem;
+}
+
+.mobile-guess-chamber .masked-word-input {
+  max-width: 100%;
+  font-size: 1.5rem;
+  border-bottom: 2px solid var(--primary);
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 0.5rem;
+  padding: 0.75rem;
+}
+
+.mobile-guess-chamber .guess-send-btn {
+  width: 54px;
+  height: 54px;
 }
 </style>
