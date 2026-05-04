@@ -10,7 +10,8 @@ const isDrawing = ref(false);
 
 // Local settings
 const color = ref('#6366f1');
-const brushSize = ref(5);
+const brushSize = ref(8);
+const selectedTool = ref('pen'); // 'pen' or 'eraser'
 const lastEmit = ref(0);
 
 // Use store to filter own drawings
@@ -35,7 +36,10 @@ const handleRemoteDraw = (event) => {
   // DEDUPLICATION: Don't draw your own remote messages back
   if (data.player_id === gameStore.gameState.playerId) return;
 
-  const { x, y, color: rColor, size: rSize, type } = data;
+  const { x, y, color: rColor, size: rSize, type, tool: rTool } = data;
+  
+  // Set composition mode based on tool
+  ctx.value.globalCompositeOperation = rTool === 'eraser' ? 'destination-out' : 'source-over';
   
   if (type === 'start') {
     ctx.value.beginPath();
@@ -79,6 +83,7 @@ const startDrawing = (e) => {
   const x = (e.clientX - rect.left) * scaleX;
   const y = (e.clientY - rect.top) * scaleY;
   
+  ctx.value.globalCompositeOperation = selectedTool.value === 'eraser' ? 'destination-out' : 'source-over';
   ctx.value.beginPath();
   ctx.value.moveTo(x, y);
   
@@ -95,6 +100,7 @@ const draw = (e) => {
   const x = (e.clientX - rect.left) * scaleX;
   const y = (e.clientY - rect.top) * scaleY;
   
+  ctx.value.globalCompositeOperation = selectedTool.value === 'eraser' ? 'destination-out' : 'source-over';
   ctx.value.strokeStyle = color.value;
   ctx.value.lineWidth = brushSize.value;
   ctx.value.lineTo(x, y);
@@ -119,7 +125,8 @@ const emitDraw = (type, x, y) => {
       x: Math.round(x),
       y: Math.round(y),
       color: color.value,
-      size: brushSize.value
+      size: brushSize.value,
+      tool: selectedTool.value
     });
   }
 };
@@ -146,13 +153,42 @@ const localClear = () => {
     <!-- Toolbar: Visible only to the drawer -->
     <div v-if="isDrawer" class="canvas-toolbar">
       <div class="tool-group">
+        <label class="hide-mobile">TOOL</label>
+        <div class="tool-buttons">
+          <button 
+            @click="selectedTool = 'pen'" 
+            :class="{ active: selectedTool === 'pen' }"
+            class="tool-btn"
+            title="Pen"
+          >
+            ✏️
+          </button>
+          <button 
+            @click="selectedTool = 'eraser'" 
+            :class="{ active: selectedTool === 'eraser' }"
+            class="tool-btn"
+            title="Eraser"
+          >
+            🧽
+          </button>
+        </div>
+      </div>
+
+      <div class="tool-group">
         <label class="hide-mobile">COLOR</label>
         <input v-model="color" type="color" class="color-picker" />
       </div>
 
       <div class="tool-group flex-1">
-        <label class="hide-mobile">BRUSH SIZE: {{ brushSize }}px</label>
-        <input v-model="brushSize" type="range" min="1" max="25" class="brush-slider" />
+        <label class="hide-mobile">SIZE: {{ brushSize }}px</label>
+        <div class="size-controls">
+          <div class="quick-sizes">
+            <button @click="brushSize = 4" :class="{ active: brushSize === 4 }" class="size-btn">S</button>
+            <button @click="brushSize = 12" :class="{ active: brushSize === 12 }" class="size-btn">M</button>
+            <button @click="brushSize = 24" :class="{ active: brushSize === 24 }" class="size-btn">L</button>
+          </div>
+          <input v-model="brushSize" type="range" min="1" max="50" class="brush-slider" />
+        </div>
       </div>
 
       <button @click="clearCanvas" class="btn-clear">
@@ -218,17 +254,32 @@ canvas {
 
 .canvas-toolbar {
   display: flex;
-  gap: 2rem;
+  gap: 1.5rem;
   align-items: center;
-  padding: 1rem 1.5rem;
+  padding: 0.75rem 1.25rem;
   background: rgba(255,255,255,0.03);
   border-bottom: 1px solid var(--border-glass);
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; /* Firefox */
+}
+
+.canvas-toolbar::-webkit-scrollbar {
+  display: none; /* Chrome/Safari */
+}
+
+@media (max-width: 1024px) {
+  .canvas-toolbar {
+    gap: 1rem;
+    padding: 0.5rem 1rem;
+  }
 }
 
 .tool-group {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+  flex-shrink: 0;
 }
 
 .tool-group label {
@@ -248,6 +299,53 @@ canvas {
   background: none;
   cursor: pointer;
   overflow: hidden;
+  flex-shrink: 0;
+}
+
+.tool-buttons, .size-controls, .quick-sizes {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.tool-btn, .size-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-glass);
+  color: white;
+  width: 44px;
+  height: 44px;
+  border-radius: 0.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  font-size: 1.25rem;
+}
+
+.tool-btn:hover, .size-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
+}
+
+.tool-btn.active, .size-btn.active {
+  background: var(--brand-teal);
+  border-color: var(--brand-teal);
+  box-shadow: 0 4px 15px var(--primary-glow);
+  transform: scale(1.05);
+}
+
+.size-btn {
+  width: 36px;
+  height: 36px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  border-radius: 0.5rem;
+}
+
+.size-controls {
+  flex: 1;
+  width: 100%;
 }
 
 .color-picker::-webkit-color-swatch {
@@ -256,8 +354,19 @@ canvas {
 }
 
 .brush-slider {
-  width: 100%;
+  width: 100px;
   cursor: pointer;
+  accent-color: var(--brand-teal);
+}
+
+@media (max-width: 768px) {
+  .brush-slider {
+    width: 60px;
+  }
+  
+  .hide-mobile {
+    display: none;
+  }
 }
 
 .btn-clear {
@@ -300,22 +409,32 @@ canvas {
 
 @media (max-width: 768px) {
   .canvas-toolbar {
-    gap: 1rem;
-    padding: 0.75rem 1rem;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 0.75rem 0.5rem;
+    overflow-x: visible;
   }
   
-  .hide-mobile { display: none; }
-  .show-mobile { display: inline; }
-  
+  .tool-btn, .size-btn, .color-picker {
+    width: 38px;
+    height: 38px;
+    border-radius: 0.5rem;
+  }
+
   .btn-clear {
     padding: 0.5rem 0.75rem;
-    font-size: 0.65rem;
+    font-size: 0.7rem;
+    border-radius: 0.5rem;
+    width: 100%; /* Make clear button full width on small screens to be prominent */
+    max-width: 150px;
   }
   
-  .color-picker {
-    width: 32px;
-    height: 32px;
+  .quick-sizes {
+    gap: 0.25rem;
   }
+
+  .show-mobile { display: inline-block; }
 }
 
 .flex-1 { flex: 1; }
