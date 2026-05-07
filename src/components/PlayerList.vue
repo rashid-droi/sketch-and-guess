@@ -77,6 +77,7 @@ const getRank = (playerId) => {
         class="player-card"
         :class="{ 
           'is-drawer': player.player_id === currentDrawerId,
+          'has-guessed': player.guessed_this_round,
           'is-top-3': getRank(player.player_id) < 3 && player.player_id !== currentDrawerId,
           'rank-1': getRank(player.player_id) === 0,
           'rank-2': getRank(player.player_id) === 1,
@@ -84,7 +85,7 @@ const getRank = (playerId) => {
         }"
       >
         <div class="player-avatar">
-          {{ player.player_name.charAt(0).toUpperCase() }}
+          {{ (player.player_name || '?').charAt(0).toUpperCase() }}
           <div v-if="getRank(player.player_id) < 3" class="rank-badge">
             {{ getRank(player.player_id) + 1 }}
           </div>
@@ -92,8 +93,12 @@ const getRank = (playerId) => {
         
         <div class="player-info">
           <div class="name-row">
-            <span class="player-name">{{ player.player_name }}</span>
+            <span class="player-name">{{ player.player_name || 'Anonymous' }}</span>
+            <div v-if="player.streak >= 2" class="streak-pill">
+              🔥 {{ player.streak }}
+            </div>
             <span v-if="player.player_id === currentDrawerId" class="drawing-tag">DRAWING</span>
+            <span v-if="player.guessed_this_round && player.player_id !== currentDrawerId" class="guessed-tag">✓</span>
           </div>
           <span class="player-score">{{ player.score || 0 }} pts</span>
         </div>
@@ -267,19 +272,43 @@ const getRank = (playerId) => {
   font-size: 0.85rem;
   font-weight: 600;
   color: var(--text-main);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.2;
 }
 
-.drawing-tag {
+.drawing-tag, .guessed-tag {
   font-size: 0.6rem;
   font-weight: 800;
-  color: var(--accent);
-  background: rgba(255, 205, 0, 0.1);
   padding: 0.1rem 0.4rem;
   border-radius: 4px;
   letter-spacing: 0.05em;
+}
+
+.drawing-tag {
+  color: var(--accent);
+  background: rgba(255, 205, 0, 0.1);
+}
+
+.guessed-tag {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+  font-weight: 900;
+}
+
+.streak-pill {
+  font-size: 0.65rem;
+  background: rgba(248, 113, 113, 0.1);
+  color: #f87171;
+  padding: 0.1rem 0.5rem;
+  border-radius: 2rem;
+  font-weight: 800;
+  animation: pulse 2s infinite;
+}
+
+.player-card.has-guessed {
+  background: rgba(16, 185, 129, 0.05);
+  border-color: rgba(16, 185, 129, 0.2);
 }
 
 .player-score {

@@ -1,21 +1,19 @@
+import os
+import uuid
+import json
+import asyncio
+import time
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-import uuid
+from typing import Dict, List
 
-from .models import CreateRoomRequest, JoinRoomRequest, Room, Player
-from .store import rooms
-from .manager import manager
-from .game_manager import start_game, handle_guess, start_next_turn
-from .database import engine, Base, SessionLocal
-from .redis_manager import redis_manager
-from .db_models import User
+from .models.schemas import Room, Player, CreateRoomRequest, JoinRoomRequest, PlayerStatus, GameStatus
+from .repositories.room_repository import room_repo
+from .engine.fsm import game_engine
+from .core.redis_client import redis_client
 
-# Initialize Database Tables
-Base.metadata.create_all(bind=engine)
+app = FastAPI(title="Sketch & Guess API")
 
-app = FastAPI(title="Sketch & Guess Backend")
-
-# Allow CORS for local testing with the frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -24,149 +22,189 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.on_event("startup")
-async def startup_event():
-    # Optional: Log that persistence is enabled
-    print("Redis Persistence enabled. Rooms will survive restarts.")
-
-@app.post("/create-room", response_model=Room)
-async def create_room(req: CreateRoomRequest):
-    # Generate a short room ID (e.g., "7A8B")
+@app.post("/create-room")
+async def create_room(request: CreateRoomRequest):
     room_id = str(uuid.uuid4())[:6].upper()
+    print(f"[DEBUG] [API] Creating room {room_id} for {request.player_name}")
     
-    new_player = Player(player_id=req.player_id, player_name=req.player_name)
-    new_room = Room(room_id=room_id, players=[new_player])
+    new_player = Player(
+        player_id=request.player_id,
+        player_name=request.player_name
+    )
     
-    rooms[room_id] = new_room
-    await redis_manager.save_room(room_id, new_room.dict())
+    new_room = Room(
+        room_id=room_id,
+        host_id=request.player_id,
+        players=[new_player]
+    )
+    
+    await room_repo.save_room(new_room)
     return new_room
 
-@app.post("/join-room", response_model=Room)
-async def join_room(req: JoinRoomRequest):
-    room_id = req.room_id.strip().upper()
-    room = rooms.get(room_id)
-    
-    # If not in memory, try loading from Redis (handles server restarts)
-    if not room:
-        room_data = await redis_manager.get_room(room_id)
-        if room_data:
-            room = Room(**room_data)
-            rooms[room_id] = room
+@app.post("/join-room")
+async def join_room(request: JoinRoomRequest):
+    print(f"[DEBUG] [API] Player {request.player_name} joining room {request.room_id}")
+    async def logic(room: Room):
+        # Check if player already in room (reconnect)
+        existing = next((p for p in room.players if p.player_id == request.player_id), None)
+        if existing:
+            print(f"[DEBUG] [API] Player {request.player_id} already exists, marking as connected")
+            existing.status = PlayerStatus.CONNECTED
+        else:
+            new_player = Player(
+                player_id=request.player_id,
+                player_name=request.player_name
+            )
+            room.players.append(new_player)
+            print(f"[DEBUG] [API] Added player {request.player_name} to room {request.room_id}. Total: {len(room.players)}")
+        return room
 
+    room = await room_repo.atomic_update(request.room_id, logic)
     if not room:
+        print(f"[DEBUG] [API] Join failed: Room {request.room_id} not found")
         raise HTTPException(status_code=404, detail="Room not found")
-        
-    # Check if player is already in room
-    for p in room.players:
-        if p.player_id == req.player_id:
-            # We can optionally just return the room here instead of throwing an error,
-            # but raising an error ensures explicit joins.
-            raise HTTPException(status_code=400, detail="Player already in room")
-            
-    # Add player to room
-    new_player = Player(player_id=req.player_id, player_name=req.player_name)
-    room.players.append(new_player)
     
-    # Persist the update
-    await redis_manager.save_room(room_id, room.dict())
-    
+    # CRITICAL: Broadcast updated list to everyone ALREADY in the room
+    # This ensures the creator sees the joiner immediately.
+    await room_repo.broadcast_leaderboard(room)
     return room
 
 @app.post("/start-game/{room_id}")
-async def trigger_game_start(room_id: str):
+async def trigger_start(room_id: str):
     room_id = room_id.upper()
-    success = await start_game(room_id)
-    if not success:
-        raise HTTPException(status_code=400, detail="Cannot start game. Check player count or room ID.")
-    return {"status": "started"}
+    print(f"\n[DEBUG] [START_GAME_CLICKED] Received API request for room: {room_id}")
+    await game_engine.transition_to_starting(room_id)
+    print(f"[DEBUG] [START_GAME_HANDLER] Transition function completed for: {room_id}\n")
+    return {"status": "success"}
+
+@app.post("/select-word/{room_id}")
+async def select_word(room_id: str, player_id: str, word: str):
+    room_id = room_id.upper()
+    print(f"[DEBUG] [SELECT_WORD_CLICKED] Player {player_id} picked {word} in {room_id}")
+    await game_engine.select_word(room_id, player_id, word)
+    return {"status": "success"}
+
+@app.post("/quit-game/{room_id}")
+async def quit_game(room_id: str):
+    room_id = room_id.upper()
+    print(f"\n[DEBUG] [API] QUIT_GAME_REQUEST received for Room: {room_id}")
+    await game_engine.transition_to_game_over(room_id)
+    return {"status": "success"}
+
+@app.post("/pause-game/{room_id}")
+async def pause_game(room_id: str):
+    room_id = room_id.upper()
+    await game_engine.transition_to_paused(room_id)
+    return {"status": "success"}
+
+@app.post("/resume-game/{room_id}")
+async def resume_game(room_id: str):
+    room_id = room_id.upper()
+    await game_engine.resume_game(room_id)
+    return {"status": "success"}
+
+@app.post("/reset-game/{room_id}")
+async def reset_game(room_id: str):
+    room_id = room_id.upper()
+    await game_engine.transition_to_starting(room_id)
+    return {"status": "success"}
 
 @app.websocket("/ws/{room_id}")
-async def websocket_endpoint(websocket: WebSocket, room_id: str, player_id: str = None):
-    room_id = room_id.strip().upper()
+async def websocket_endpoint(websocket: WebSocket, room_id: str):
+    room_id = room_id.upper()
+    player_id = websocket.query_params.get("player_id")
+    print(f"[DEBUG] [WS] Connection request for room {room_id} from player {player_id}")
     
-    # Check if room exists in memory or Redis
-    if room_id not in rooms:
-        room_data = await redis_manager.get_room(room_id)
-        if room_data:
-            rooms[room_id] = Room(**room_data)
-        else:
-            await websocket.close(code=1008)
-            return
+    if not player_id:
+        await websocket.close(code=4003)
+        return
 
-    await manager.connect(websocket, room_id)
+    await websocket.accept()
+    print(f"[DEBUG] [WS] Connection accepted for {player_id} in {room_id}")
     
-    # Broadcast join to others
-    if player_id:
-        from .game_manager import get_leaderboard
-        room = rooms.get(room_id)
-        if room:
-            player = next((p for p in room.players if p.player_id == player_id), None)
-            display_name = player.player_name if player else player_id
+    # CRITICAL: Mark player as connected in Redis so they are included in the game queue
+    async def mark_connected(room: Room):
+        for p in room.players:
+            if p.player_id == player_id:
+                p.status = PlayerStatus.CONNECTED
+        return room
+    await room_repo.atomic_update(room_id, mark_connected)
+    print(f"[DEBUG] [WS] Player {player_id} status set to CONNECTED in Redis")
+
+    # 1. State Rehydration: Send full room state on connect
+    room = await room_repo.get_room(room_id)
+    if room:
+        # Use model_dump_json to ensure perfect serialization
+        room_data = json.loads(room.model_dump_json())
+        
+        # Inject dynamic fields like masked word for guessers
+        from .engine.logic import mask_word
+        if room.current_word:
+            room_data["masked_word"] = mask_word(room.current_word, room.hints_used)
+            room_data["word_length"] = len(room.current_word)
+        else:
+            room_data["masked_word"] = ""
+            room_data["word_length"] = 0
             
-            await redis_manager.publish(room_id, {
-                "type": "game_event",
-                "data": {"event": "player_joined", "details": f"{display_name} joined"}
-            })
-            
-            await redis_manager.publish(room_id, {
-                "type": "score_update",
-                "data": {"leaderboard": get_leaderboard(room)}
-            })
-    
-    # Subscribe to Redis for cross-instance broadcasts
-    pubsub = await redis_manager.subscribe(room_id)
+        print(f"[DEBUG] [WS] Sending rehydration to {player_id} (v{room.version})")
+        await websocket.send_json({
+            "type": "rehydration",
+            "data": room_data
+        })
+        
+        # 2. Broadcast presence with friendly name
+        player_name = next((p.player_name for p in room.players if p.player_id == player_id), player_id)
+        await redis_client.publish_event(room_id, {
+            "type": "game_event",
+            "data": {"event": "player_joined", "details": f"{player_name} joined the room"}
+        })
+        
+        # 3. Force room-wide player list update
+        await room_repo.broadcast_leaderboard(room)
+
+    # 4. Subscribe to Redis events for this room
+    pubsub = await redis_client.subscribe(room_id)
     
     async def redis_listener():
-        async for msg in pubsub.listen():
-            if msg["type"] == "message":
-                await websocket.send_text(msg["data"])
+        try:
+            async for msg in pubsub.listen():
+                if msg["type"] == "message":
+                    await websocket.send_text(msg["data"])
+        except Exception as e:
+            print(f"[DEBUG] [WS] Redis listener error: {e}")
 
-    import asyncio
-    rtask = asyncio.create_task(redis_listener())
-    
+    listener_task = asyncio.create_task(redis_listener())
+
     try:
         while True:
+            # Handle incoming client messages (Chat, Draw, Choice)
             data = await websocket.receive_json()
+            msg_type = data.get("type")
+            msg_payload = data.get("data", {})
             
-            # Inject player details so everyone knows who sent the message
-            if isinstance(data, dict) and "data" in data and isinstance(data["data"], dict) and player_id:
-                room = rooms.get(room_id)
-                if room:
-                    player = next((p for p in room.players if p.player_id == player_id), None)
-                    if player:
-                        data["data"]["player_id"] = player.player_id
-                        data["data"]["player_name"] = player.player_name
-
-            # 1. Publish to Redis (broadcasts to all instances)
-            await redis_manager.publish(room_id, data)
-            # 2. Local side-effects (e.g. guess checking)
-            if data.get("type") == "chat" and player_id:
-                await handle_guess(room_id, player_id, data.get("data", {}).get("message", ""))
+            # Enrich with player info
+            msg_payload["player_id"] = player_id
+            
+            if msg_type == "chat":
+                # Check for guess
+                guess_text = msg_payload.get("message", "")
+                await game_engine.handle_guess(room_id, player_id, guess_text)
+                
+            # Publish event to everyone in the room
+            await redis_client.publish_event(room_id, data)
             
     except WebSocketDisconnect:
-        rtask.cancel()
-        manager.disconnect(websocket, room_id)
+        print(f"[DEBUG] [WS] Player {player_id} disconnected from {room_id}")
+        listener_task.cancel()
         
-        # Safe cleanup
-        room = rooms.get(room_id)
-        if room:
-            leaving_player = next((p for p in room.players if p.player_id == player_id), None)
-            if leaving_player:
-                room.players.remove(leaving_player)
-                
-                # Check if we need to rotate turn
-                if player_id == room.current_drawer and room.players:
-                    await start_next_turn(room_id)
-                
-                # Broadcast departure
-                await redis_manager.publish(room_id, {
-                    "type": "game_event",
-                    "data": {"event": "player_left", "details": f"{leaving_player.player_name} left"}
-                })
-                
-                # Update leaderboard
-                from .game_manager import get_leaderboard
-                await redis_manager.publish(room_id, {
-                    "type": "score_update",
-                    "data": {"leaderboard": get_leaderboard(room)}
-                })
+        async def disconnect_logic(room: Room):
+            player = next((p for p in room.players if p.player_id == player_id), None)
+            if player:
+                player.status = PlayerStatus.RECONNECTING
+            return room
+            
+        await room_repo.atomic_update(room_id, disconnect_logic)
+        
+    except Exception as e:
+        print(f"[DEBUG] [WS] Error: {e}")
+        listener_task.cancel()

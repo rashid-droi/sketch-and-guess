@@ -36,11 +36,15 @@ const handleAction = async (isJoin = false) => {
     }
     
     const data = await response.json();
+    console.log('[DEBUG] [API] Action response:', data);
     
-    // Set initial player list and identity in store
-    gameStore.gameState.players = data.players;
-    gameStore.gameState.playerName = playerName.value;
-    gameStore.gameState.playerId = playerId;
+    // Set initial player identity in store
+    gameStore.setPlayer(playerId, playerName.value);
+    
+    // Update players list if returned (usually on Join)
+    if (data.players) {
+      gameStore.gameState.players.splice(0, gameStore.gameState.players.length, ...data.players);
+    }
     
     // Navigate to the room
     router.push(`/room/${data.room_id}`);

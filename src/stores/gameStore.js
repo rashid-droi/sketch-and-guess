@@ -11,12 +11,18 @@ export const useGameStore = defineStore('game', () => {
     players: [],
     status: 'LOBBY',
     currentDrawer: '',
+    currentDrawerName: '',
     currentWord: '',
     maskedWord: '',
     timer: 60,
     messages: [],
     isDrawer: false,
-    wordLength: 0
+    wordLength: 0,
+    wordChoices: [],
+    mvps: null,
+    clearCounter: 0,
+    hasGuessedCorrectly: false,
+    hostId: ''
   });
 
   const connect = (roomId, playerId, playerName) => {
@@ -36,7 +42,7 @@ export const useGameStore = defineStore('game', () => {
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const apiHost = window.location.hostname === 'localhost' ? 'localhost:8000' : `${window.location.hostname}:8000`;
-    const socketUrl = `${protocol}//${apiHost}/ws/${roomId}?player_id=${playerId}`;
+    const socketUrl = `${protocol}//${apiHost}/ws/${roomId}?player_id=${playerId}&player_name=${encodeURIComponent(playerName)}`;
     
     socket.value = new WebSocket(socketUrl);
 
@@ -82,21 +88,89 @@ export const useGameStore = defineStore('game', () => {
 
   const handleMessage = (message) => {
     const { type, data } = message;
+    if (data && data.host_id) gameState.hostId = data.host_id;
+    console.log(`[DEBUG] [WS] Received event: ${type}`, data);
 
     switch (type) {
+      case 'rehydration':
+        console.log(`[DEBUG] [Sync] Received ${data.players?.length || 0} players in rehydration`);
+        gameState.status = data.status;
+        
+        if (data.players) {
+          gameState.players.splice(0, gameState.players.length, ...data.players);
+        }
+        
+        gameState.currentDrawer = data.current_drawer;
+        
+        const drawer = data.players?.find(p => p.player_id === data.current_drawer);
+        gameState.currentDrawerName = drawer ? drawer.player_name : 'Someone';
+        
+        gameState.currentWord = data.current_word;
+        gameState.maskedWord = data.masked_word;
+        gameState.timer = data.timer;
+        gameState.isDrawer = data.current_drawer === gameState.playerId;
+        gameState.wordChoices = data.word_choices || [];
+        gameState.clearCounter = data.clear_counter || 0;
+        break;
+
+      case 'choosing_word':
+        console.log('[DEBUG] [FSM] Transitioning to CHOOSING state:', data);
+        gameState.status = 'CHOOSING';
+        gameState.currentDrawer = data.drawer_id;
+        gameState.currentDrawerName = data.drawer_name;
+        gameState.isDrawer = data.drawer_id === gameState.playerId;
+        gameState.wordChoices = data.choices || [];
+        gameState.timer = data.delay || 10;
+        addSystemMessage(`${data.drawer_name} is choosing a word...`);
+        break;
+
       case 'game_event':
         addSystemMessage(data.details);
         if (data.event === 'game_start') gameState.status = 'IN_PROGRESS';
         break;
       
+      case 'round_ended':
+        gameState.status = 'ROUND_END';
+        gameState.currentWord = data.word; // Reveal the full word
+        addSystemMessage(`Round ended! The word was: ${data.word}`);
+        break;
+
+      case 'game_over':
+        gameState.status = 'GAME_OVER';
+        gameState.mvps = data.mvps;
+        if (data.leaderboard) {
+          gameState.players.splice(0, gameState.players.length, ...data.leaderboard);
+        }
+        addSystemMessage('Game Over! Check the final leaderboard.');
+        break;
+
+      case 'game_paused':
+        gameState.status = 'PAUSED';
+        addSystemMessage('Game paused by host');
+        break;
+
+      case 'game_resumed':
+        gameState.status = data.status;
+        addSystemMessage('Game resumed');
+        break;
+
+      case 'clear_canvas':
+        console.log('[DEBUG] [Canvas] Clearing drawing surface');
+        gameState.clearCounter++;
+        break;
+
       case 'new_turn':
+        gameState.status = 'DRAWING';
+        gameState.hasGuessedCorrectly = false;
         gameState.currentDrawer = data.drawer_id;
         gameState.isDrawer = data.drawer_id === gameState.playerId;
         gameState.currentWord = data.full_word;
         gameState.maskedWord = data.masked_word;
         gameState.wordLength = data.word_length || 0;
-        gameState.timer = 60;
+        gameState.timer = data.seconds || 60;
         addSystemMessage(`${data.drawer_name} is now drawing!`);
+        // Force canvas reset event
+        window.dispatchEvent(new CustomEvent('canvas-clear'));
         break;
 
       case 'timer_update':
@@ -106,17 +180,33 @@ export const useGameStore = defineStore('game', () => {
 
       case 'correct_guess':
         playSound('success');
-        addSystemMessage(`${data.player_name} guessed the word: ${data.word}!`);
+        addSystemMessage(`${data.player_name} guessed the word! (+${data.points} pts)`);
+        
+        // Trigger satisfying confetti celebration
         confetti({
           particleCount: 150,
           spread: 70,
           origin: { y: 0.6 },
           colors: ['#6366f1', '#22d3ee', '#8b5cf6', '#ffffff']
         });
+        
+        // Update local state immediately for responsiveness
+        if (data.player_id === gameState.playerId) {
+          gameState.hasGuessedCorrectly = true;
+        }
+        const p = gameState.players.find(p => p.player_id === data.player_id);
+        if (p) {
+          p.score = data.total_score;
+          p.guessed_this_round = true;
+          p.streak = data.streak;
+        }
         break;
 
       case 'score_update':
-        gameState.players = data.leaderboard;
+        console.log('[DEBUG] [Sync] Leaderboard Update:', data.leaderboard);
+        if (data.leaderboard) {
+          gameState.players.splice(0, gameState.players.length, ...data.leaderboard);
+        }
         break;
 
       case 'chat':
@@ -133,6 +223,11 @@ export const useGameStore = defineStore('game', () => {
         window.dispatchEvent(new CustomEvent('remote-draw', { detail: data }));
         break;
     }
+  };
+
+  const selectWord = (word) => {
+    const apiHost = window.location.hostname === 'localhost' ? 'localhost:8000' : `${window.location.hostname}:8000`;
+    fetch(`http://${apiHost}/select-word/${gameState.roomId}?player_id=${gameState.playerId}&word=${word}`, { method: 'POST' });
   };
 
   const send = (type, data) => {
@@ -156,20 +251,28 @@ export const useGameStore = defineStore('game', () => {
     if (gameState.messages.length > 100) gameState.messages.shift();
   };
 
+  const setPlayer = (id, name) => {
+    console.log(`[DEBUG] [Store] Setting local player: ${name} (${id})`);
+    gameState.playerId = id;
+    gameState.playerName = name;
+  };
+
   const resetState = () => {
+    console.log('[DEBUG] [Store] Resetting state');
     if (socket.value) {
       socket.value.close();
       socket.value = null;
     }
     gameState.status = 'LOBBY';
     gameState.messages = [];
-    gameState.players = [];
+    gameState.players.splice(0, gameState.players.length);
   };
 
   return {
     gameState,
     connect,
     send,
+    setPlayer,
     resetState
   };
 });

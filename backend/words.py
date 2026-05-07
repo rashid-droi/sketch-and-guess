@@ -13,6 +13,29 @@ def get_random_word() -> str:
 def mask_word(word: str) -> str:
     if not word:
         return ""
-    # Show first letter, other letters as underscores
-    masked = word[0] + " " + " ".join(["_" for _ in range(len(word) - 1)])
-    return masked
+    # Initially show all underscores with spaces
+    return " ".join(["_" for _ in range(len(word))])
+
+def get_hint(word: str, hints_used: int) -> str:
+    if not word:
+        return ""
+    
+    # Reveal more letters as hints_used increases
+    # 1st hint: Reveal 1st letter
+    # 2nd hint: Reveal 1st and mid letter
+    # 3rd hint: Reveal 1st, mid, and last letter
+    
+    chars = list("_" * len(word))
+    indices_to_reveal = []
+    
+    if hints_used >= 1:
+        indices_to_reveal.append(0)
+    if hints_used >= 2:
+        indices_to_reveal.append(len(word) // 2)
+    if hints_used >= 3:
+        indices_to_reveal.append(len(word) - 1)
+        
+    for i in indices_to_reveal:
+        chars[i] = word[i]
+        
+    return " ".join(chars)

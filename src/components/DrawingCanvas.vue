@@ -2,7 +2,11 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { useGameStore } from '../stores/gameStore';
 
-const props = defineProps(['isDrawer', 'onDraw']);
+const props = defineProps({
+  isDrawer: Boolean,
+  onDraw: Function,
+  clearCounter: Number
+});
 
 const canvasRef = ref(null);
 const ctx = ref(null);
@@ -71,6 +75,12 @@ const handleTouchEnd = (e) => {
   e.preventDefault();
   stopDrawing();
 };
+
+// Watch for external clear requests (e.g. from server)
+watch(() => props.clearCounter, () => {
+  console.log('[DEBUG] [Canvas] Clearing per external request');
+  clearCanvas();
+});
 
 const startDrawing = (e) => {
   if (!props.isDrawer) return;
