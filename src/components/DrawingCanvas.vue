@@ -60,19 +60,19 @@ const handleRemoteDraw = (event) => {
 
 const handleTouchStart = (e) => {
   if (!props.isDrawer) return;
-  e.preventDefault();
+  if (e.cancelable) e.preventDefault();
   startDrawing(e.touches[0]);
 };
 
 const handleTouchMove = (e) => {
   if (!props.isDrawer) return;
-  e.preventDefault();
+  if (e.cancelable) e.preventDefault();
   draw(e.touches[0]);
 };
 
 const handleTouchEnd = (e) => {
   if (!props.isDrawer) return;
-  e.preventDefault();
+  if (e.cancelable) e.preventDefault();
   stopDrawing();
 };
 
@@ -255,7 +255,8 @@ canvas {
   background: #ffffff;
   border-radius: 0.5rem;
   box-shadow: 0 0 20px rgba(0,0,0,0.5);
-  touch-action: none;
+  /* Only disable touch-action if actively drawing to allow page scroll for guessers */
+  touch-action: v-bind("isDrawer ? 'none' : 'pan-y'");
 }
 
 .drawing-cursor {

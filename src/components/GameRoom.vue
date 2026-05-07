@@ -441,14 +441,15 @@ watch(
 .mobile-nav { display: none; }
 
 .game-dashboard {
-  height: 100dvh;
-  max-height: 100dvh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   padding: 1rem;
   gap: 1rem;
-  background: transparent; /* Inherit site-wide linear gradient */
-  overflow: hidden; /* Lock the main page */
+  background: transparent;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .game-header {
@@ -633,8 +634,7 @@ watch(
   grid-template-columns: 280px 1fr 340px;
   gap: 1rem;
   flex: 1;
-  min-height: 0; /* Critical for internal scrolling */
-  overflow: hidden;
+  min-height: 0;
 }
 
 .canvas-chamber {
