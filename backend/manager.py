@@ -19,9 +19,21 @@ class ConnectionManager:
                 del self.active_connections[room_id]
 
     async def broadcast(self, message: dict, room_id: str, exclude: WebSocket = None):
-        if room_id in self.active_connections:
-            for connection in self.active_connections[room_id]:
-                if connection != exclude:
-                    await connection.send_json(message)
+        if room_id not in self.active_connections:
+            return
+            
+        connections = self.active_connections[room_id]
+        if not connections:
+            return
+
+        # Prepare tasks for parallel execution
+        tasks = []
+        for connection in connections:
+            if connection != exclude:
+                tasks.append(connection.send_json(message))
+        
+        if tasks:
+            # Use return_exceptions=True so one bad connection doesn't kill the whole broadcast
+            await asyncio.gather(*tasks, return_exceptions=True)
 
 manager = ConnectionManager()

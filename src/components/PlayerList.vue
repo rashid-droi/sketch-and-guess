@@ -1,7 +1,7 @@
 <script setup>
 import { computed, ref } from 'vue';
 
-const props = defineProps(['players', 'currentDrawerId']);
+const props = defineProps(['players', 'currentDrawerId', 'myPlayerId']);
 
 const searchQuery = ref('');
 
@@ -27,12 +27,39 @@ const sortedPlayers = computed(() => {
 });
 
 // Search/Filter logic
-const processedPlayers = computed(() => {
+const filteredPlayers = computed(() => {
   if (!searchQuery.value.trim()) return sortedPlayers.value;
   const query = searchQuery.value.toLowerCase().trim();
   return sortedPlayers.value.filter(player => 
     player.player_name.toLowerCase().includes(query)
   );
+});
+
+// Final display logic: Limit to top 50, but ALWAYS include self and drawer
+const processedPlayers = computed(() => {
+  const all = filteredPlayers.value;
+  if (all.length <= 50) return all;
+  
+  const top50 = all.slice(0, 50);
+  const result = [...top50];
+  
+  // Ensure drawer is included if not in top 50
+  if (props.currentDrawerId) {
+    const drawer = all.find(p => p.player_id === props.currentDrawerId);
+    if (drawer && !result.find(p => p.player_id === props.currentDrawerId)) {
+      result.push(drawer);
+    }
+  }
+  
+  // Ensure current user is included if not in top 50
+  if (props.myPlayerId) {
+    const me = all.find(p => p.player_id === props.myPlayerId);
+    if (me && !result.find(p => p.player_id === props.myPlayerId)) {
+      result.push(me);
+    }
+  }
+  
+  return result;
 });
 
 // Pre-calculate ranks in a map to avoid O(N^2) in the template
@@ -106,6 +133,10 @@ const getRank = (playerId) => {
         <div v-if="player.player_id === currentDrawerId" class="drawer-badge-pulse">
           <span class="pencil-icon">🎨</span>
         </div>
+      </div>
+      
+      <div v-if="players.length > 50 && !searchQuery" class="list-limit-hint">
+        Showing top 50 players
       </div>
       
       <div v-if="processedPlayers.length === 0" class="empty-search">
@@ -339,6 +370,18 @@ const getRank = (playerId) => {
   color: var(--text-muted);
   font-size: 0.8rem;
   font-style: italic;
+}
+
+.list-limit-hint {
+  text-align: center;
+  padding: 0.5rem;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 0.5rem;
+  margin-top: 0.5rem;
 }
 
 @keyframes pulse-glow {

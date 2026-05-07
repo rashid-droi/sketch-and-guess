@@ -126,6 +126,7 @@ const triggerReset = async () => {
 
 const guessInput = ref(null);
 const guessInputMobile = ref(null);
+const rotationHintDismissed = ref(false);
 
 const focusInput = () => {
   const input = window.innerWidth <= 1024 ? guessInputMobile.value : guessInput.value;
@@ -166,6 +167,16 @@ watch(
 
 <template>
   <div class="game-dashboard">
+    <!-- Orientation Hint (Mobile Only) -->
+    <div v-if="gameState.status !== 'LOBBY' && !rotationHintDismissed" class="orientation-hint">
+      <div class="hint-content">
+        <div class="rotate-icon">🔄</div>
+        <h3>ROTATE FOR BETTER EXPERIENCE</h3>
+        <p>Landscape mode provides a much larger drawing canvas!</p>
+        <button @click="rotationHintDismissed = true" class="btn-primary hint-dismiss-btn">OK, GOT IT</button>
+      </div>
+    </div>
+
     <!-- Top Navigation Bar -->
     <header class="glass-card game-header">
       <div class="header-left">
@@ -366,73 +377,51 @@ watch(
           <PlayerList 
             :players="gameState.players" 
             :currentDrawerId="gameState.currentDrawer" 
+            :myPlayerId="playerId"
           />
-          <div v-if="isLeader" class="lobby-actions sidebar-footer">
-            <template v-if="gameState.status === 'LOBBY'">
-              <div class="host-badge">YOU ARE HOST</div>
-              <button 
-                id="start-game-btn"
-                @click="triggerStart" 
-                class="btn-primary start-btn-sidebar"
-                :disabled="isStarting"
-              >
-                {{ isStarting ? 'STARTING...' : 'START GAME' }}
-              </button>
-            </template>
-            
-            <template v-else-if="gameState.status !== 'GAME_OVER'">
-              <button 
-                @click="triggerQuit" 
-                class="btn-danger quit-btn-sidebar"
-                :disabled="isQuitting"
-              >
-                {{ isQuitting ? 'QUITTING...' : 'QUIT GAME' }}
-              </button>
-            </template>
-          </div>
         </aside>
       </div>
-    </div>
 
-    <!-- Host Actions (Bottom Position) -->
-    <div v-if="isLeader" class="host-action-footer">
-      <template v-if="gameState.status !== 'GAME_OVER'">
-        <!-- Lobby Action -->
-        <button 
-          v-if="gameState.status === 'LOBBY'"
-          @click="triggerStart" 
-          class="btn-primary start-btn-footer"
-          :disabled="isStarting"
-        >
-          {{ isStarting ? 'STARTING...' : 'START GAME' }}
-        </button>
+      <!-- Host Actions (Integrated Position) -->
+      <div v-if="isLeader" class="host-action-footer">
+        <template v-if="gameState.status !== 'GAME_OVER'">
+          <!-- Lobby Action -->
+          <button 
+            v-if="gameState.status === 'LOBBY'"
+            @click="triggerStart" 
+            class="btn-primary start-btn-footer"
+            :disabled="isStarting"
+          >
+            {{ isStarting ? 'STARTING...' : 'START GAME' }}
+          </button>
 
-        <!-- Active Session Actions -->
-        <button 
-          v-if="gameState.status === 'DRAWING'"
-          @click="triggerPause" 
-          class="btn-warning pause-btn-footer"
-        >
-          PAUSE GAME
-        </button>
-        
-        <button 
-          v-if="gameState.status === 'PAUSED'"
-          @click="triggerResume" 
-          class="btn-primary resume-btn-footer"
-        >
-          RESUME GAME
-        </button>
+          <!-- Active Session Actions -->
+          <button 
+            v-if="gameState.status === 'DRAWING'"
+            @click="triggerPause" 
+            class="btn-warning pause-btn-footer"
+          >
+            PAUSE GAME
+          </button>
+          
+          <button 
+            v-if="gameState.status === 'PAUSED'"
+            @click="triggerResume" 
+            class="btn-primary resume-btn-footer"
+          >
+            RESUME GAME
+          </button>
 
-        <button 
-          v-if="gameState.status !== 'LOBBY'"
-          @click="triggerQuit" 
-          class="btn-danger quit-btn-footer"
-          :disabled="isQuitting"
-        >
-          {{ isQuitting ? 'QUITTING...' : 'QUIT GAME' }}
-        </button>
-      </template>
+          <button 
+            v-if="gameState.status !== 'LOBBY'"
+            @click="triggerQuit" 
+            class="btn-danger quit-btn-footer"
+            :disabled="isQuitting"
+          >
+            {{ isQuitting ? 'QUITTING...' : 'QUIT GAME' }}
+          </button>
+        </template>
+      </div>
     </div>
   </div>
 </template>
@@ -444,8 +433,8 @@ watch(
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
-  padding: 1rem;
-  gap: 1rem;
+  padding: clamp(0.5rem, 2vw, 1.5rem);
+  gap: clamp(0.5rem, 2vh, 1.5rem);
   background: transparent;
   overflow-x: hidden;
   overflow-y: auto;
@@ -631,17 +620,23 @@ watch(
 
 .game-layout {
   display: grid;
-  grid-template-columns: 280px 1fr 340px;
-  gap: 1rem;
+  grid-template-columns: minmax(260px, 1fr) 3fr minmax(300px, 1.2fr);
+  gap: clamp(0.75rem, 2vw, 1.5rem);
   flex: 1;
   min-height: 0;
+  width: 100%;
+  max-width: 1800px;
+  margin: 0 auto;
 }
 
 .canvas-chamber {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: auto;
+  height: 100%;
+  width: 100%;
+  position: relative;
+  gap: 0.75rem;
 }
 
 .sidebar-left, .sidebar-right {
@@ -689,9 +684,11 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 200;
+  z-index: 500;
   backdrop-filter: blur(4px);
-  background: rgba(0, 0, 0, 0.6);
+  background: rgba(0, 0, 0, 0.7);
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .round-end-overlay {
@@ -701,12 +698,26 @@ watch(
 
 .game-over-overlay {
   background: rgba(15, 23, 42, 0.95);
-  border: 2px solid var(--accent);
+  backdrop-filter: blur(35px);
+  border: 1px solid var(--accent);
+  padding: 2rem 0;
+  align-items: flex-start; /* Ensure start from top for scrolling */
+}
+
+.game-over-title {
+  font-size: clamp(2rem, 8vw, 3.5rem);
+  font-weight: 900;
+  margin-bottom: 2rem;
+  background: linear-gradient(135deg, var(--accent), #f59e0b);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 0 20px rgba(255, 205, 0, 0.3));
 }
 
 .overlay-content {
   text-align: center;
   animation: zoomIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  margin: auto; /* Help centering when content is smaller than container */
 }
 
 @keyframes zoomIn {
@@ -715,15 +726,17 @@ watch(
 }
 
 .overlay-content.full-width {
-  width: 90%;
+  width: 95%;
   max-width: 800px;
+  padding: 1rem;
 }
 
 .mvp-badges {
   display: flex;
   justify-content: center;
+  flex-wrap: wrap;
   gap: 1.5rem;
-  margin-bottom: 3rem;
+  margin-bottom: 2.5rem;
 }
 
 .restart-controls {
@@ -753,13 +766,15 @@ watch(
 .mvp-badge {
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid var(--border-glass);
-  padding: 1.5rem;
-  border-radius: 1.5rem;
+  padding: 1.25rem;
+  border-radius: 1.25rem;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 0.5rem;
-  min-width: 180px;
+  min-width: 160px;
+  flex: 1;
+  max-width: 240px;
   animation: bounceIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275);
 }
 
@@ -1092,16 +1107,19 @@ watch(
 @media (max-width: 1024px) {
   .game-layout {
     grid-template-columns: 1fr;
-    grid-template-rows: 1fr 280px;
+    grid-template-rows: auto auto;
+    gap: 1rem;
   }
   
   .canvas-chamber {
-    min-height: 0;
+    min-height: clamp(400px, 60dvh, 800px);
+    height: auto;
   }
   
   .sidebars-row {
     display: flex;
     gap: 1rem;
+    height: 320px;
     min-height: 0;
   }
   
@@ -1115,75 +1133,67 @@ watch(
 /* Small Tablet / Large Mobile */
 @media (max-width: 768px) {
   .game-dashboard {
-    padding: max(0.25rem, env(safe-area-inset-top)) max(0.25rem, env(safe-area-inset-right)) max(0.25rem, env(safe-area-inset-bottom)) max(0.25rem, env(safe-area-inset-left));
+    padding: max(0.5rem, env(safe-area-inset-top)) max(0.5rem, env(safe-area-inset-right)) max(0.5rem, env(safe-area-inset-bottom)) max(0.5rem, env(safe-area-inset-left));
     min-height: 100dvh;
     height: auto;
     overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
     display: flex;
     flex-direction: column;
+    gap: 0.75rem;
   }
 
   .game-header {
     grid-template-columns: auto 1fr auto;
-    border-radius: 1rem;
-    margin-bottom: 0.25rem;
-    padding: 0.5rem 0.75rem;
+    padding: 0.75rem;
     gap: 0.5rem;
+    border-radius: 0.75rem;
   }
 
   .game-layout {
-    display: block; /* Standard block stacking prevents squishing */
+    display: flex;
+    flex-direction: column;
     height: auto;
+    gap: 0.75rem;
   }
 
   .canvas-chamber {
-    height: 50dvh; /* SIGNIFICANTLY EXPANDED */
-    min-height: 400px;
+    height: auto;
+    min-height: clamp(450px, 75dvh, 900px);
     width: 100%;
-    margin-bottom: 0.5rem;
+    margin: 0;
   }
 
   .sidebars-row {
     order: 2;
     display: flex;
     flex-direction: row;
-    gap: 0.25rem;
-    height: 450px;
-    width: 100%;
+    gap: 0.75rem;
+    height: auto;
+    min-height: 320px;
   }
 
   .sidebar-left, .sidebar-right {
-    width: 50%;
-    height: 100%;
-    padding: 0;
-  }
-  
-  .lobby-actions {
-    order: 3;
-    padding: 0.5rem 0;
+    flex: 1;
+    min-width: 0;
+    height: 320px;
   }
 }
 
 /* Phone / Small Mobile */
 @media (max-width: 480px) {
   .canvas-chamber {
-    height: 55dvh; /* EVEN LARGER ON PHONES */
-    min-height: 350px;
+    min-height: clamp(400px, 65dvh, 600px);
   }
   
   .sidebars-row {
-    display: block;
-    height: auto;
+    flex-direction: column;
+    gap: 0.75rem;
   }
 
   .sidebar-left, .sidebar-right {
-    display: flex;
-    flex-direction: column;
-    width: 100%;
-    height: 40dvh !important;
-    min-height: 250px;
-    margin-bottom: 1rem;
+    height: auto;
+    min-height: 280px;
+    max-height: 40dvh;
   }
 }
 .show-mobile-tablet { display: none; }
@@ -1275,8 +1285,8 @@ watch(
 }
 
 .pause-overlay {
-  background: rgba(15, 23, 42, 0.85);
-  backdrop-filter: blur(15px);
+  background: rgba(15, 23, 42, 0.9);
+  backdrop-filter: blur(35px);
 }
 
 .pause-icon {
@@ -1330,6 +1340,7 @@ watch(
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   margin-top: auto;
   z-index: 1000;
+  grid-column: 1 / -1; /* Centering fix for desktop/tablet grid */
 }
 
 .start-btn-footer, .pause-btn-footer, .resume-btn-footer, .quit-btn-footer {
@@ -1373,12 +1384,12 @@ watch(
   bottom: 0;
   left: 0;
   width: 100%;
-  padding: 1rem;
-  background: rgba(15, 23, 42, 0.9);
-  backdrop-filter: blur(15px);
-  border-top: 2px solid rgba(255, 255, 255, 0.05);
-  z-index: 50;
-  box-shadow: 0 -10px 25px rgba(0, 0, 0, 0.2);
+  padding: clamp(0.5rem, 2vw, 1.25rem);
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(30px);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  z-index: 500;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.4);
 }
 
 @media (max-width: 1024px) {
@@ -1388,24 +1399,28 @@ watch(
 }
 
 .guess-input-container {
-  max-width: 600px;
+  max-width: 800px;
   margin: 0 auto;
   width: 100%;
+  display: flex;
+  justify-content: center;
 }
 
 .input-glow-wrapper {
   display: flex;
   gap: 0.5rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  border-radius: 1.25rem;
-  padding: 0.25rem;
-  transition: all 0.3s ease;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 1.5rem;
+  padding: 0.35rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  width: 100%;
+  min-height: 54px;
 }
 
 .input-glow-wrapper:focus-within {
-  border-color: var(--primary-glow);
-  box-shadow: 0 0 20px rgba(16, 185, 129, 0.2);
+  border-color: var(--primary);
+  box-shadow: 0 0 30px rgba(16, 185, 129, 0.2);
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -1534,6 +1549,67 @@ watch(
   .host-action-footer {
     padding: 1rem;
     gap: 0.5rem;
+  }
+}
+
+/* Orientation Hint Styles */
+.orientation-hint {
+  display: none; /* Hidden by default */
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.95);
+  backdrop-filter: blur(20px);
+  z-index: 9999;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 2rem;
+  color: white;
+}
+
+.rotate-icon {
+  font-size: 4rem;
+  margin-bottom: 1.5rem;
+  animation: rotatePhone 2s ease-in-out infinite;
+}
+
+.orientation-hint h3 {
+  font-weight: 900;
+  letter-spacing: 0.05em;
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+}
+
+.orientation-hint p {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  max-width: 250px;
+  margin-bottom: 2rem;
+}
+
+.hint-dismiss-btn {
+  padding: 0.8rem 2rem;
+  font-size: 0.9rem;
+  font-weight: 800;
+  border-radius: 2rem;
+  width: 100%;
+  max-width: 200px;
+}
+
+@keyframes rotatePhone {
+  0% { transform: rotate(0deg); }
+  25% { transform: rotate(90deg); }
+  75% { transform: rotate(90deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@media (max-width: 768px) and (orientation: portrait) {
+  .orientation-hint {
+    display: flex;
   }
 }
 </style>

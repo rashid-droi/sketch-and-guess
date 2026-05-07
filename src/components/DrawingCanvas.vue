@@ -22,13 +22,25 @@ const lastEmit = ref(0);
 const gameStore = useGameStore();
 
 onMounted(() => {
-  ctx.value = canvasRef.value.getContext('2d');
-  ctx.value.lineCap = 'round';
-  ctx.value.lineJoin = 'round';
-  
+  setupCanvas();
   // Listen for drawing data from other players
   window.addEventListener('remote-draw', handleRemoteDraw);
 });
+
+const setupCanvas = () => {
+  const canvas = canvasRef.value;
+  const dpr = window.devicePixelRatio || 1;
+  
+  // Set logical size
+  canvas.width = 800 * dpr;
+  canvas.height = 550 * dpr;
+  
+  ctx.value = canvas.getContext('2d');
+  ctx.value.scale(dpr, dpr);
+  
+  ctx.value.lineCap = 'round';
+  ctx.value.lineJoin = 'round';
+};
 
 onUnmounted(() => {
   window.removeEventListener('remote-draw', handleRemoteDraw);
@@ -87,8 +99,9 @@ const startDrawing = (e) => {
   isDrawing.value = true;
   
   const rect = canvasRef.value.getBoundingClientRect();
-  const scaleX = canvasRef.value.width / rect.width;
-  const scaleY = canvasRef.value.height / rect.height;
+  // Use logical units (800x550) for coordinate mapping to sync with ctx.scale(dpr, dpr)
+  const scaleX = 800 / rect.width;
+  const scaleY = 550 / rect.height;
   
   const x = (e.clientX - rect.left) * scaleX;
   const y = (e.clientY - rect.top) * scaleY;
@@ -104,8 +117,8 @@ const draw = (e) => {
   if (!isDrawing.value || !props.isDrawer) return;
   
   const rect = canvasRef.value.getBoundingClientRect();
-  const scaleX = canvasRef.value.width / rect.width;
-  const scaleY = canvasRef.value.height / rect.height;
+  const scaleX = 800 / rect.width;
+  const scaleY = 550 / rect.height;
   
   const x = (e.clientX - rect.left) * scaleX;
   const y = (e.clientY - rect.top) * scaleY;
